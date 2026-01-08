@@ -622,6 +622,126 @@ const IdentityComparisonPlot = ({ trials, cueColors, width = 600, height = 400 }
   );
 };
 
+// Line plot for angle progression
+const AngleProgressionPlot = ({ trials, selectedEpisode, selectedColor, width = 800, height = 300 }) => {
+  const filteredTrials = trials.filter(t => {
+    if (selectedEpisode && t.episode !== selectedEpisode) return false;
+    if (selectedColor && t.cueColor !== selectedColor) return false;
+    return true;
+  });
+  
+  if (filteredTrials.length === 0) return null;
+  
+  const padding = { top: 20, right: 40, bottom: 40, left: 60 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  
+  const xScale = (i) => padding.left + (i / (filteredTrials.length - 1)) * plotWidth;
+  const yScale = (angle) => padding.top + (1 - angle / 360) * plotHeight;
+  
+  // Create path
+  const path = filteredTrials.map((t, i) => 
+    `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(t.actualVectorAngle)}`
+  ).join(' ');
+  
+  return (
+    <svg width={width} height={height} className="border border-gray-200 rounded-lg bg-white">
+      {/* Y-axis */}
+      <line
+        x1={padding.left}
+        y1={padding.top}
+        x2={padding.left}
+        y2={height - padding.bottom}
+        stroke="#9ca3af"
+        strokeWidth="2"
+      />
+      
+      {/* X-axis */}
+      <line
+        x1={padding.left}
+        y1={height - padding.bottom}
+        x2={width - padding.right}
+        y2={height - padding.bottom}
+        stroke="#9ca3af"
+        strokeWidth="2"
+      />
+      
+      {/* Y-axis labels */}
+      {[0, 90, 180, 270, 360].map(angle => (
+        <g key={`y-${angle}`}>
+          <line
+            x1={padding.left - 5}
+            y1={yScale(angle)}
+            x2={padding.left}
+            y2={yScale(angle)}
+            stroke="#9ca3af"
+            strokeWidth="1"
+          />
+          <text
+            x={padding.left - 10}
+            y={yScale(angle)}
+            textAnchor="end"
+            dominantBaseline="middle"
+            className="text-xs fill-gray-600"
+          >
+            {angle}°
+          </text>
+        </g>
+      ))}
+      
+      {/* Axis labels */}
+      <text
+        x={padding.left + plotWidth / 2}
+        y={height - 5}
+        textAnchor="middle"
+        className="text-sm fill-gray-700 font-medium"
+      >
+        Trial
+      </text>
+      
+      <text
+        x={15}
+        y={padding.top + plotHeight / 2}
+        textAnchor="middle"
+        transform={`rotate(-90, 15, ${padding.top + plotHeight / 2})`}
+        className="text-sm fill-gray-700 font-medium"
+      >
+        Angle (°)
+      </text>
+      
+      {/* Plot line */}
+      <path
+        d={path}
+        fill="none"
+        stroke="#6366f1"
+        strokeWidth="2"
+      />
+      
+      {/* Plot points */}
+      {filteredTrials.map((t, i) => (
+        <circle
+          key={`point-${i}`}
+          cx={xScale(i)}
+          cy={yScale(t.actualVectorAngle)}
+          r="3"
+          fill={t.cueColor}
+          opacity={t.outcomeOccurred === 0 ? 0.3 : 0.8}
+          stroke={t.isOddball ? "#dc2626" : "white"}
+          strokeWidth={t.isOddball ? 2 : 1}
+        >
+          <title>
+            Trial {t.trialIndex} | Episode {t.episode} | Trial {t.trialInEpisode}/{t.episodeLength}
+            {'\n'}Angle: {t.actualVectorAngle.toFixed(1)}°
+            {'\n'}Identity: {t.cueIdentity}
+            {t.isOddball ? '\n🔴 ODDBALL' : ''}
+            {t.outcomeOccurred === 0 ? '\n⚠️ No Outcome' : ''}
+          </title>
+        </circle>
+      ))}
+    </svg>
+  );
+};
+
 // Main App Component
 const App = () => {
   const [params, setParams] = useState({
@@ -809,6 +929,17 @@ const App = () => {
                 trials={data.trials}
                 cueColors={data.cueColors}
               />
+            </div>
+            {/* Angle Progression */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <h2 className="text-xl font-semibold mb-4">Angle Progression Over Trials</h2>
+              <div className="flex justify-center">
+                <AngleProgressionPlot
+                  trials={data.trials}
+                  selectedEpisode={selectedEpisode}
+                  selectedColor={selectedColor}
+                />
+              </div>
             </div>
           </div>
         )}
