@@ -210,6 +210,9 @@ const generateTrials = (params) => {
     throw new Error('Could not plan episodes');
   };
 
+  const wrap180 = (angle) =>
+  ((angle + 180) % 360 + 360) % 360 - 180;
+
   const episodePlan = planEpisodes();
 
   const allTrials = [];
@@ -242,7 +245,7 @@ const generateTrials = (params) => {
       }
       
       const actualVectorAngle = addAngleNoise(targetVectorAngle, kappa);
-      const angleNoise = ((actualVectorAngle - targetVectorAngle + 180) % 360) - 180;
+      const angleNoise = wrap180(actualVectorAngle - targetVectorAngle);
       
       allTrials.push({
         episode,
@@ -664,7 +667,6 @@ const App = () => {
     episodeAngleShiftCue2: 120,
     rule3Shift: 70,
     kappa: 3,
-    angleNoiseStd: 10,
     featureLen: 360,
     minEpisodeLength: 16,
     maxEpisodeLength: 24,
@@ -832,7 +834,7 @@ const App = () => {
                   type="number"
                   step="1"
                   value={params.kappa}
-                  onChange={(e) => handleParamChange('kappa', e.target.value)}
+                  onChange={(e) => handleParamChange('kappa', parseFloat(e.target.value))}
                   className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none"
                 />
               </div>
