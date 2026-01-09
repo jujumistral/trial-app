@@ -4,7 +4,47 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Settings, Download, ChevronDown, ChevronUp } from 'lucide-react';
 
-// Exact implementation matching Python script
+// Von Mises sampling function
+const sampleVonMises = (kappa) => {
+  if (kappa <= 0.0001) {
+    return (Math.random() - 0.5) * 2 * Math.PI;
+  }
+
+  const a = 1 + Math.sqrt(1 + 4 * kappa * kappa);
+  const b = (a - Math.sqrt(2 * a)) / (2 * kappa);
+  const r = (1 + b * b) / (2 * b);
+
+  let maxAttempts = 1000;
+  while (maxAttempts-- > 0) {
+    const u1 = Math.random();
+    const z = Math.cos(Math.PI * u1);
+    const f = (1 + r * z) / (r + z);
+    const c = kappa * (r - f);
+
+    const u2 = Math.random();
+    if (u2 < c * (2 - c) || u2 <= c * Math.exp(1 - c)) {
+      const u3 = Math.random();
+      const res = Math.acos(f);
+      return (u3 > 0.5 ? res : -res);
+    }
+  }
+  // Fallback if sampling fails
+  return (Math.random() - 0.5) * 2 * Math.PI;
+};
+
+// Add angle noise using Von Mises distribution
+const addAngleNoise = (targetAngle, kappa) => {
+  const noiseRadians = sampleVonMises(kappa);
+  const noiseDegrees = noiseRadians * (180 / Math.PI);
+  let result = targetAngle + noiseDegrees;
+  
+  // Normalize to 0-360
+  while (result < 0) result += 360;
+  while (result >= 360) result -= 360;
+  
+  return result;
+};
+
 const generateTrials = (params) => {
   const {
     nEpisodes,
@@ -12,8 +52,6 @@ const generateTrials = (params) => {
     episodeAngleShiftCue2,
     rule3Shift,
     kappa,
-    angleNoiseStd,
-    featureLen,
     minEpisodeLength,
     maxEpisodeLength,
     targetMeanMin,
@@ -28,10 +66,6 @@ const generateTrials = (params) => {
     oddballAngleShift
   } = params;
 
-  // Suppress unused variable warnings
-  const _unused = { kappa, featureLen };
-
-  // Color pairs
   const colorPairs = [
     [['#df9998', '#03bfb6'], ['peach', 'mint']],
     [['#c3a86a', '#4cb6e4'], ['curry', 'skyblue']],
@@ -41,7 +75,6 @@ const generateTrials = (params) => {
   const selectedPairIdx = Math.floor(Math.random() * colorPairs.length);
   const [cueColors, cueColorLabels] = colorPairs[selectedPairIdx];
 
-  // Generate balanced episode lengths
   const generateEpisodeLengths = () => {
     let attempts = 0;
     while (attempts < 1000) {
@@ -61,7 +94,6 @@ const generateTrials = (params) => {
 
   const episodeLengths = generateEpisodeLengths();
 
-  // Generate balanced identities
   const generateBalancedIdentities = () => {
     for (let attempt = 0; attempt < 100; attempt++) {
       const all8 = [1, 1, 1, 1, 2, 2, 2, 2];
@@ -80,7 +112,6 @@ const generateTrials = (params) => {
 
   let episodeIdentities = generateBalancedIdentities();
 
-  // Generate valid cue sequence
   const generateValidCueSequence = (nTrials, requiredStart, learningTrials) => {
     for (let attempt = 0; attempt < 1000; attempt++) {
       const nColor1 = Math.floor(Math.random() * 5) + Math.max(1, Math.floor(nTrials / 2) - 2);
@@ -89,7 +120,6 @@ const generateTrials = (params) => {
       const sequence = [];
       const counts = { [cueColors[0]]: 0, [cueColors[1]]: 0 };
       
-      // Learning phase
       if (learningTrials > 0 && requiredStart) {
         for (let i = 0; i < Math.min(learningTrials, nTrials); i++) {
           sequence.push(requiredStart);
@@ -97,7 +127,6 @@ const generateTrials = (params) => {
         }
       }
       
-      // Fill remaining
       const remaining = nTrials - sequence.length;
       let remaining1 = nColor1 - counts[cueColors[0]];
       let remaining2 = nColor2 - counts[cueColors[1]];
@@ -131,7 +160,6 @@ const generateTrials = (params) => {
     throw new Error('Could not generate valid sequence');
   };
 
-  // Plan all episodes
   const planEpisodes = () => {
     for (let planAttempt = 0; planAttempt < 1000; planAttempt++) {
       try {
@@ -184,13 +212,6 @@ const generateTrials = (params) => {
 
   const episodePlan = planEpisodes();
 
-  // Add angle noise
-  const addAngleNoise = (targetAngle) => {
-    const noise = (Math.random() - 0.5) * 2 * angleNoiseStd;
-    return (targetAngle + noise + 360) % 360;
-  };
-
-  // Build trials
   const allTrials = [];
   let trialCounter = 1;
   const initialStartAngle = Math.floor(Math.random() * 360) + 1;
@@ -199,7 +220,6 @@ const generateTrials = (params) => {
     const episodeLength = episodeLengths[episode - 1];
     const cueSequence = episodePlan[episode - 1];
     
-    // Determine start angle
     let startAngle;
     if (episode === 1) {
       startAngle = initialStartAngle;
@@ -221,7 +241,7 @@ const generateTrials = (params) => {
         targetVectorAngle = (baseAngle + rule3Shift) % 360;
       }
       
-      const actualVectorAngle = addAngleNoise(targetVectorAngle);
+      const actualVectorAngle = addAngleNoise(targetVectorAngle, kappa);
       const angleNoise = ((actualVectorAngle - targetVectorAngle + 180) % 360) - 180;
       
       allTrials.push({
@@ -242,7 +262,6 @@ const generateTrials = (params) => {
     }
   }
 
-  // Assign outcome omissions
   const outcomes = allTrials.map(() => 1);
   const episodeGroups = {};
   
@@ -296,7 +315,6 @@ const generateTrials = (params) => {
     trial.outcomeOccurred = outcomes[idx];
   });
 
-  // Assign oddballs
   const oddballs = allTrials.map(() => false);
   
   for (const [ep, indices] of Object.entries(episodeGroups)) {
@@ -337,7 +355,8 @@ const generateTrials = (params) => {
       
       const trial = allTrials[idx];
       const oddballTarget = (trial.targetVectorAngle + oddballAngleShift) % 360;
-      const oddballActual = addAngleNoise(oddballTarget);
+      const oddballActual = addAngleNoise(oddballTarget, kappa);
+      
       trial.actualVectorAngle = Math.round(oddballActual * 100) / 100;
       trial.angleNoise = Math.round((((oddballActual - oddballTarget + 180) % 360) - 180) * 100) / 100;
     }
@@ -356,7 +375,6 @@ const generateTrials = (params) => {
   };
 };
 
-// Circular plot
 const CircularPlot = ({ trials, selectedEpisode, selectedColor, width = 500, height = 500 }) => {
   const centerX = width / 2;
   const centerY = height / 2;
@@ -442,7 +460,6 @@ const CircularPlot = ({ trials, selectedEpisode, selectedColor, width = 500, hei
   );
 };
 
-// Line plot for angle progression
 const AngleProgressionPlot = ({ trials, selectedEpisode, selectedColor, width = 800, height = 300 }) => {
   const filteredTrials = trials.filter(t => {
     if (selectedEpisode && t.episode !== selectedEpisode) return false;
@@ -459,85 +476,34 @@ const AngleProgressionPlot = ({ trials, selectedEpisode, selectedColor, width = 
   const xScale = (i) => padding.left + (i / (filteredTrials.length - 1)) * plotWidth;
   const yScale = (angle) => padding.top + (1 - angle / 360) * plotHeight;
   
-  // Create path
   const path = filteredTrials.map((t, i) => 
     `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(t.actualVectorAngle)}`
   ).join(' ');
   
   return (
     <svg width={width} height={height} className="border border-gray-200 rounded-lg bg-white">
-      {/* Y-axis */}
-      <line
-        x1={padding.left}
-        y1={padding.top}
-        x2={padding.left}
-        y2={height - padding.bottom}
-        stroke="#9ca3af"
-        strokeWidth="2"
-      />
+      <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="#9ca3af" strokeWidth="2" />
+      <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="#9ca3af" strokeWidth="2" />
       
-      {/* X-axis */}
-      <line
-        x1={padding.left}
-        y1={height - padding.bottom}
-        x2={width - padding.right}
-        y2={height - padding.bottom}
-        stroke="#9ca3af"
-        strokeWidth="2"
-      />
-      
-      {/* Y-axis labels */}
       {[0, 90, 180, 270, 360].map(angle => (
         <g key={`y-${angle}`}>
-          <line
-            x1={padding.left - 5}
-            y1={yScale(angle)}
-            x2={padding.left}
-            y2={yScale(angle)}
-            stroke="#9ca3af"
-            strokeWidth="1"
-          />
-          <text
-            x={padding.left - 10}
-            y={yScale(angle)}
-            textAnchor="end"
-            dominantBaseline="middle"
-            className="text-xs fill-gray-600"
-          >
+          <line x1={padding.left - 5} y1={yScale(angle)} x2={padding.left} y2={yScale(angle)} stroke="#9ca3af" strokeWidth="1" />
+          <text x={padding.left - 10} y={yScale(angle)} textAnchor="end" dominantBaseline="middle" className="text-xs fill-gray-600">
             {angle}°
           </text>
         </g>
       ))}
       
-      {/* Axis labels */}
-      <text
-        x={padding.left + plotWidth / 2}
-        y={height - 5}
-        textAnchor="middle"
-        className="text-sm fill-gray-700 font-medium"
-      >
+      <text x={padding.left + plotWidth / 2} y={height - 5} textAnchor="middle" className="text-sm fill-gray-700 font-medium">
         Trial
       </text>
       
-      <text
-        x={15}
-        y={padding.top + plotHeight / 2}
-        textAnchor="middle"
-        transform={`rotate(-90, 15, ${padding.top + plotHeight / 2})`}
-        className="text-sm fill-gray-700 font-medium"
-      >
+      <text x={15} y={padding.top + plotHeight / 2} textAnchor="middle" transform={`rotate(-90, 15, ${padding.top + plotHeight / 2})`} className="text-sm fill-gray-700 font-medium">
         Angle (°)
       </text>
       
-      {/* Plot line */}
-      <path
-        d={path}
-        fill="none"
-        stroke="#6366f1"
-        strokeWidth="2"
-      />
+      <path d={path} fill="none" stroke="#6366f1" strokeWidth="2" />
       
-      {/* Plot points */}
       {filteredTrials.map((t, i) => (
         <circle
           key={`point-${i}`}
@@ -562,7 +528,6 @@ const AngleProgressionPlot = ({ trials, selectedEpisode, selectedColor, width = 
   );
 };
 
-// Identity comparison plot
 const IdentityComparisonPlot = ({ trials, cueColors, width = 600, height = 400 }) => {
   const identity1Trials = trials.filter(t => t.cueIdentity === 1);
   const identity2Trials = trials.filter(t => t.cueIdentity === 2);
@@ -631,8 +596,6 @@ const IdentityComparisonPlot = ({ trials, cueColors, width = 600, height = 400 }
   );
 };
 
-
-// Histogram
 const AngleHistogram = ({ trials, selectedEpisode, selectedColor, width = 500, height = 300 }) => {
   const filteredTrials = trials.filter(t => {
     if (selectedEpisode && t.episode !== selectedEpisode) return false;
@@ -694,14 +657,13 @@ const AngleHistogram = ({ trials, selectedEpisode, selectedColor, width = 500, h
   );
 };
 
-// Main App
 const App = () => {
   const [params, setParams] = useState({
     nEpisodes: 9,
     episodeAngleShiftCue1: 120,
     episodeAngleShiftCue2: 120,
     rule3Shift: 70,
-    kappa: 10,
+    kappa: 3,
     angleNoiseStd: 10,
     featureLen: 360,
     minEpisodeLength: 16,
@@ -743,7 +705,8 @@ const App = () => {
   };
   
   const handleParamChange = (key, value) => {
-    setParams(prev => ({ ...prev, [key]: parseFloat(value) }));
+    const numValue = value === "" ? 0 : parseFloat(value);
+    setParams(prev => ({ ...prev, [key]: numValue }));
   };
   
   const handleDownload = () => {
@@ -863,10 +826,11 @@ const App = () => {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Kappa (concentration)
+                  Kappa (concentration: lower = more noise)
                 </label>
                 <input
                   type="number"
+                  step="1"
                   value={params.kappa}
                   onChange={(e) => handleParamChange('kappa', e.target.value)}
                   className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none"
@@ -884,10 +848,6 @@ const App = () => {
             
             {showAdvancedSettings && (
               <div className="grid grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Angle Noise Std (°)</label>
-                  <input type="number" value={params.angleNoiseStd} onChange={(e) => handleParamChange('angleNoiseStd', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
-                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Number of Episodes</label>
                   <input type="number" value={params.nEpisodes} onChange={(e) => handleParamChange('nEpisodes', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" min="1" max="20" />
